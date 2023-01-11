@@ -86,7 +86,16 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
         case .right, .topRight, .bottomRight:
             return g.size.width + config.margin + actualArrowHeight + animationOffset
         case .top, .center, .bottom:
-            return (g.size.width - contentWidth) / 2
+            let offsetX = (g.size.width - contentWidth) / 2
+            let overflowWidth = UIScreen.main.bounds.width - (g.frame(in: .global).origin.x + offsetX + contentWidth)
+            if overflowWidth < 0 {
+                return offsetX + overflowWidth - config.margin
+            }
+            let hStartCoordinate = g.frame(in: .global).origin.x + offsetX
+            if hStartCoordinate < 0 {
+                return offsetX - hStartCoordinate + config.margin
+            }
+            return offsetX
         }
     }
 
@@ -97,7 +106,52 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
         case .bottom, .bottomLeft, .bottomRight:
             return g.size.height + config.margin + actualArrowHeight + animationOffset
         case .left, .center, .right:
-            return (g.size.height - contentHeight) / 2
+            let offsetY = (g.size.height - contentHeight) / 2
+            let overflowHeight = UIScreen.main.bounds.height - (g.frame(in: .global).origin.y + offsetY + contentHeight)
+            if overflowHeight < 0 {
+                return offsetY + overflowHeight - config.margin - g.safeAreaInsets.bottom
+            }
+            let vStartCoordinate = g.frame(in: .global).origin.y + offsetY
+            if vStartCoordinate < 0 {
+                return offsetY - vStartCoordinate + config.margin + g.safeAreaInsets.top
+            }
+            return offsetY
+        }
+    }
+    
+    private func offsetArrowHorizontal(_ g: GeometryProxy) -> CGFloat {
+        switch config.side {
+        case .top, .bottom:
+            let offsetX = (g.size.width - contentWidth) / 2
+            let overflowWidth = UIScreen.main.bounds.width - (g.frame(in: .global).origin.x + offsetX + contentWidth)
+            if overflowWidth < 0 {
+                return -(overflowWidth - config.margin) - (g.size.width / 4)
+            }
+            let hStartCoordinate = g.frame(in: .global).origin.x + offsetX
+            if hStartCoordinate < 0 {
+                return hStartCoordinate - config.margin + (g.size.width / 4)
+            }
+            return 0
+        default:
+            return 0
+        }
+    }
+    
+    private func offsetArrowVertical(_ g: GeometryProxy) -> CGFloat {
+        switch config.side {
+        case .left, .right:
+            let offsetY = (g.size.height - contentHeight) / 2
+            let overflowHeight = UIScreen.main.bounds.height - (g.frame(in: .global).origin.y + offsetY + contentHeight)
+            if overflowHeight < 0 {
+                return config.margin - overflowHeight
+            }
+            let vStartCoordinate = g.frame(in: .global).origin.y + offsetY
+            if vStartCoordinate < 0 {
+                return vStartCoordinate - config.margin
+            }
+            return 0
+        default:
+            return 0
         }
     }
     
@@ -129,7 +183,7 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
         }
     }
 
-    private var arrowView: some View {
+    private func getArrowView(overflowOffset: CGPoint) -> some View {
         guard let arrowAngle = config.side.getArrowAngleRadians() else {
             return AnyView(EmptyView())
         }
@@ -144,10 +198,10 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
                 .foregroundColor(config.backgroundColor)
                 
             ).frame(width: config.arrowWidth, height: config.arrowHeight)
-            .offset(x: self.arrowOffsetX, y: self.arrowOffsetY))
+            .offset(x: self.arrowOffsetX + overflowOffset.x, y: self.arrowOffsetY + overflowOffset.y))
     }
 
-    private var arrowCutoutMask: some View {
+    private func getArrowCutoutMask(overflowOffset: CGPoint) -> some View {
         guard let arrowAngle = config.side.getArrowAngleRadians() else {
             return AnyView(EmptyView())
         }
@@ -165,8 +219,8 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
                         height: config.arrowHeight + config.borderWidth)
                     .rotationEffect(Angle(radians: arrowAngle))
                     .offset(
-                        x: self.arrowOffsetX,
-                        y: self.arrowOffsetY)
+                        x: self.arrowOffsetX + overflowOffset.x,
+                        y: self.arrowOffsetY + overflowOffset.y)
                     .foregroundColor(.black)
             }
             .compositingGroup()
@@ -176,6 +230,13 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
 
     var tooltipBody: some View {
         GeometryReader { g in
+            let offsetX = self.offsetHorizontal(g)
+            let offsetY = self.offsetVertical(g)
+            let arrowOffsetX = self.offsetArrowHorizontal(g)
+            let arrowOffsetY = self.offsetArrowVertical(g)
+            
+            let arrowView = getArrowView(overflowOffset: CGPoint(x: arrowOffsetX, y: arrowOffsetY))
+            let arrowCutoutMask = getArrowCutoutMask(overflowOffset: CGPoint(x: arrowOffsetX, y: arrowOffsetY))
             ZStack {
                 RoundedRectangle(cornerRadius: config.borderRadius)
                     .stroke(config.borderWidth == 0 ? Color.clear : config.borderColor)
@@ -184,7 +245,7 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
                         RoundedRectangle(cornerRadius: config.borderRadius)
                             .foregroundColor(config.backgroundColor)
                     )
-                    .mask(self.arrowCutoutMask)
+                    .mask(arrowCutoutMask)
                 
                 ZStack {
                     content
@@ -196,9 +257,9 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
                         .fixedSize(horizontal: config.width == nil, vertical: true)
                 }
                 .background(self.sizeMeasurer)
-                .overlay(self.arrowView)
+                .overlay(arrowView)
             }
-            .offset(x: self.offsetHorizontal(g), y: self.offsetVertical(g))
+            .offset(x: offsetX, y: offsetY)
             .animation(self.animation)
             .zIndex(config.zIndex)
             .onAppear {
