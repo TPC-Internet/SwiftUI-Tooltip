@@ -29,6 +29,9 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
     
     @State var animationOffset: CGFloat = 0
     @State var animation: Optional<Animation> = nil
+    
+    @State private var arrowOverflowOffsetX: CGFloat = 0
+    @State private var arrowOverflowOffsetY: CGFloat = 0
 
     // MARK: - Computed properties
 
@@ -86,7 +89,18 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
         case .right, .topRight, .bottomRight:
             return g.size.width + config.margin + actualArrowHeight + animationOffset
         case .top, .center, .bottom:
-            return (g.size.width - contentWidth) / 2
+            let offsetX = (g.size.width - contentWidth) / 2
+            let overflowWidth = UIScreen.main.bounds.width - (g.frame(in: .global).origin.x + offsetX + contentWidth)
+            if overflowWidth < 0 {
+                self.arrowOverflowOffsetX = -(overflowWidth - config.margin)
+                return offsetX + overflowWidth - config.margin
+            }
+            let hStartCoordinate = g.frame(in: .global).origin.x + offsetX
+            if hStartCoordinate < 0 {
+                self.arrowOverflowOffsetX = config.margin - hStartCoordinate
+                return offsetX - hStartCoordinate + config.margin
+            }
+            return offsetX
         }
     }
 
@@ -97,7 +111,17 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
         case .bottom, .bottomLeft, .bottomRight:
             return g.size.height + config.margin + actualArrowHeight + animationOffset
         case .left, .center, .right:
-            return (g.size.height - contentHeight) / 2
+            let offsetY = (g.size.height - contentHeight) / 2
+            let overflowHeight = UIScreen.main.bounds.height - (g.frame(in: .global).origin.y + offsetY + contentHeight)
+            if overflowHeight < 0 {
+                self.arrowOverflowOffsetY = overflowHeight
+                return offsetY + overflowHeight - config.margin - g.safeAreaInsets.bottom
+            }
+            let vStartCoordinate = g.frame(in: .global).origin.y + offsetY
+            if vStartCoordinate < 0 {
+                return offsetY - vStartCoordinate + config.margin + g.safeAreaInsets.top
+            }
+            return offsetY
         }
     }
     
@@ -144,7 +168,7 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
                 .foregroundColor(config.backgroundColor)
                 
             ).frame(width: config.arrowWidth, height: config.arrowHeight)
-            .offset(x: self.arrowOffsetX, y: self.arrowOffsetY))
+            .offset(x: self.arrowOffsetX + self.arrowOverflowOffsetX, y: self.arrowOffsetY + self.arrowOverflowOffsetY))
     }
 
     private var arrowCutoutMask: some View {
@@ -165,8 +189,8 @@ struct TooltipModifier<TooltipContent: View>: ViewModifier {
                         height: config.arrowHeight + config.borderWidth)
                     .rotationEffect(Angle(radians: arrowAngle))
                     .offset(
-                        x: self.arrowOffsetX,
-                        y: self.arrowOffsetY)
+                        x: self.arrowOffsetX + self.arrowOverflowOffsetX,
+                        y: self.arrowOffsetY + self.arrowOverflowOffsetY)
                     .foregroundColor(.black)
             }
             .compositingGroup()
